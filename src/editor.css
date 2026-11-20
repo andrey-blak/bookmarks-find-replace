@@ -1,0 +1,41 @@
+/* Follows the browser's light/dark theme: system colors only, no hardcoded hues. */
+:root {
+  color-scheme: light dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 14px system-ui, sans-serif;
+  color: CanvasText;
+  background: Canvas;
+}
+
+header {
+  padding: 16px 20px;
+  border-bottom: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+}
+
+h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+main {
+  padding: 20px;
+}
+
+#status {
+  color: GrayText;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

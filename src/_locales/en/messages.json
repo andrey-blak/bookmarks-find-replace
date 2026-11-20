@@ -1,0 +1,22 @@
+{
+  "extensionName": {
+    "message": "Bookmarks Find & Replace",
+    "description": "Name of the extension, shown in Firefox UI and as the editor page heading."
+  },
+  "extensionDescription": {
+    "message": "Find and replace bookmark names, folder names, and URLs. Regular expressions, preview, undo.",
+    "description": "Description shown in add-on manager and about pages."
+  },
+  "actionTitle": {
+    "message": "Bookmarks Find & Replace",
+    "description": "Tooltip of the toolbar button."
+  },
+  "loading": {
+    "message": "Loading…",
+    "description": "Status text shown while data is being loaded."
+  },
+  "engineLoadFailed": {
+    "message": "Engine module failed to load",
+    "description": "Status text shown when the logic module did not initialize."
+  }
+}
