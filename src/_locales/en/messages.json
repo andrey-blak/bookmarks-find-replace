@@ -11,12 +11,40 @@
     "message": "Bookmarks Find & Replace",
     "description": "Tooltip of the toolbar button."
   },
-  "loading": {
-    "message": "Loading…",
-    "description": "Status text shown while data is being loaded."
+  "allBookmarks": {
+    "message": "All bookmarks",
+    "description": "Root entry of the folder scope tree, matching Firefox Library wording."
   },
-  "engineLoadFailed": {
-    "message": "Engine module failed to load",
-    "description": "Status text shown when the logic module did not initialize."
+  "folderTreeLabel": {
+    "message": "Bookmark folders",
+    "description": "Accessible name of the folder scope tree."
+  },
+  "scopeLabel": {
+    "message": "Scope:",
+    "description": "Label before the selected scope folder path."
+  },
+  "includeSubfolders": {
+    "message": "Include subfolders",
+    "description": "Checkbox: search inside subfolders of the selected scope."
+  },
+  "searchPending": {
+    "message": "Find & replace controls will appear here.",
+    "description": "Placeholder shown in the main panel until the search form exists."
+  },
+  "toggleSidebar": {
+    "message": "Show or hide the folder panel",
+    "description": "Tooltip of the sidebar toggle button."
+  },
+  "resizeSidebar": {
+    "message": "Drag to resize the folder panel",
+    "description": "Tooltip of the sidebar resize handle."
+  },
+  "loadError": {
+    "message": "Could not load bookmarks.",
+    "description": "Prefix of the error banner shown when reading the bookmark tree fails."
+  },
+  "retry": {
+    "message": "Retry",
+    "description": "Button that re-attempts loading the bookmark tree."
   }
 }

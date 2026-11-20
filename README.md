@@ -2,7 +2,7 @@
 
 A Firefox extension for finding and replacing text in bookmark names, folder names, and URLs, with regular expressions, scoped search, live preview, and undo.
 
-Current state: project scaffolding only. The editor page loads and reports the extension version; the find/replace engine, preview, apply, and undo are being built step by step (see `docs/roadmap.md`).
+The editor page shows the bookmark folder tree and lets you pick the search scope.
 
 ## Requirements
 

@@ -1,11 +1,13 @@
-/* Follows the browser's light/dark theme: system colors only, no hardcoded hues. */
+/* Light/dark follows the browser: system colors only, no hardcoded hues. */
 :root {
   color-scheme: light dark;
+  --border: color-mix(in srgb, CanvasText 18%, transparent);
+  --sidebar-width: 260px;
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -14,28 +16,130 @@ body {
   background: Canvas;
 }
 
-header {
-  padding: 16px 20px;
-  border-bottom: 1px solid color-mix(in srgb, CanvasText 18%, transparent);
+button, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 52px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
 }
 
-h1 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+.topbar h1 { margin: 0; font-size: 17px; font-weight: 600; }
+
+.muted { color: GrayText; }
+
+.icon-button {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 4px 8px;
 }
 
-main {
-  padding: 20px;
+.icon-button svg { display: block; }
+
+.icon-button:hover { background: color-mix(in srgb, CanvasText 8%, transparent); }
+
+:focus-visible {
+  outline: 2px solid AccentColor;
+  outline-offset: 1px;
 }
 
-#status {
+.layout {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) 6px 1fr;
+  height: calc(100vh - 52px);
+}
+
+/* When hidden, sidebar+resizer leave the grid flow — main must get the single
+   1fr track, not the first of three. */
+.layout.sidebar-hidden { grid-template-columns: 1fr; }
+.layout.sidebar-hidden .sidebar,
+.layout.sidebar-hidden .resizer { display: none; }
+
+.sidebar {
+  overflow: auto;
+  border-right: 1px solid var(--border);
+  padding: 8px 6px;
+}
+
+.resizer { cursor: col-resize; }
+.resizer.dragging { background: color-mix(in srgb, AccentColor 35%, transparent); }
+
+/* --- folder tree --- */
+
+.tree-children { margin-left: 16px; }
+
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: 6px;
+}
+
+.tree-row.selected { background: color-mix(in srgb, AccentColor 22%, transparent); }
+
+.tree-toggle {
+  width: 20px;
+  flex: 0 0 auto;
+  border: none;
+  background: none;
   color: GrayText;
+  padding: 2px 0;
+}
+
+.tree-toggle:disabled { visibility: hidden; }
+
+.tree-button {
+  flex: 1 1 auto;
+  display: block;
+  text-align: left;
+  border: none;
+  background: none;
+  border-radius: 6px;
+  padding: 3px 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-button:hover { background: color-mix(in srgb, CanvasText 8%, transparent); }
+
+/* --- main --- */
+
+.main { overflow: auto; padding: 16px 20px; }
+
+.scope-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+#scopePath { overflow: hidden; text-overflow: ellipsis; }
+
+.inline-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, red 45%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, red 12%, Canvas);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * {
-    animation: none !important;
-    transition: none !important;
-  }
+  * { animation: none !important; transition: none !important; }
 }
