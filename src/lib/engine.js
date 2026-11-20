@@ -49,6 +49,100 @@ export function collapseWhitespace(value) {
   return value.replace(/\s+/g, " ").trim();
 }
 
+// --- scope walk ---
+
+// Flatten the getTree()-shaped tree into editable targets.
+// Options: scopeId (null = whole tree), recursive, mode ("names" | "urls"),
+// includeFolders (names mode only).
+// Rules (tested): the built-in roots (children of the hidden top node) are
+// traversed but never themselves targets; the selected scope folder is not a
+// target either — only its contents; `path` is the ancestor breadcrumb used
+// for display.
+export function collectTargets(
+  tree,
+  { scopeId = null, recursive = true, mode = "names", includeFolders = false } = {},
+) {
+  const targets = [];
+
+  const isFolder = (node) => node.url === undefined && Array.isArray(node.children);
+  const join = (path, title) => (path ? `${path} / ${title}` : title);
+
+  function collect(nodes, path, recurse) {
+    for (const node of nodes) {
+      if (isFolder(node)) {
+        if (includeFolders && mode === "names") {
+          targets.push({ id: node.id, kind: "folder", path, title: node.title });
+        }
+        if (recurse) collect(node.children, join(path, node.title), recursive);
+      } else if (node.url !== undefined) {
+        targets.push({
+          id: node.id, kind: "bookmark", path, title: node.title, url: node.url,
+        });
+      }
+    }
+  }
+
+  if (scopeId === null) {
+    for (const builtin of tree[0]?.children ?? []) {
+      collect(builtin.children ?? [], builtin.title, recursive);
+    }
+    return targets;
+  }
+
+  function locate(nodes, trail) {
+    for (const node of nodes) {
+      if (node.id === scopeId) return { node, trail };
+      const found = locate(node.children ?? [], [...trail, node]);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const scope = locate(tree, []);
+  if (!scope || !isFolder(scope.node)) return targets;
+  const scopePath = scope.trail.map((n) => n.title).filter((t) => t !== "").join(" / ");
+  collect(scope.node.children, join(scopePath, scope.node.title), recursive);
+  return targets;
+}
+
+// --- change computation ---
+
+// One entry per (target, field) whose value actually differs.
+// problems: "empty URL" | "invalid URL" (proposed result), "empty name".
+export function computeChanges(targets, { replacer, mode, collapseWhitespace: collapse = false }) {
+  if (!replacer) return [];
+  const changes = [];
+  for (const target of targets) {
+    const field = mode === "urls" ? "url" : "title";
+    const original = target[field];
+    if (original === undefined) continue;
+    let proposed = replacer(original);
+    if (collapse) proposed = collapseWhitespace(proposed);
+    if (proposed === original) continue;
+
+    const problems = [];
+    if (field === "url") {
+      if (proposed === "") {
+        problems.push("empty URL");
+      } else {
+        try {
+          new URL(proposed);
+        } catch {
+          problems.push("invalid URL");
+        }
+      }
+    } else if (proposed.trim() === "") {
+      problems.push("empty name");
+    }
+
+    changes.push({
+      id: target.id, kind: target.kind, path: target.path,
+      field, original, proposed, problems,
+    });
+  }
+  return changes;
+}
+
 // Emoji search pattern for the "Remove emoji" preset: the preset fills this exact
 // string into the visible Find field (regex mode), so what runs is what the user
 // sees and can edit. Covers pictographs, ZWJ sequences, skin tones, keycaps,

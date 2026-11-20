@@ -5,6 +5,8 @@ import {
   makeReplacer,
   collapseWhitespace,
   EMOJI_FIND_PATTERN,
+  collectTargets,
+  computeChanges,
 } from "../src/lib/engine.js";
 
 // --- escapeForRegex ---
@@ -125,4 +127,138 @@ test("emoji pattern strips variation-selector emoji", () => {
 
 test("emoji-only name becomes empty string", () => {
   assert.equal(emojiStrip("🤩🤩"), "");
+});
+
+// ============================================================
+// Step 2: scope walk (collectTargets) and change computation
+// ============================================================
+
+// Fixture shaped like browser.bookmarks.getTree() output.
+const TREE = [{
+  id: "0", title: "", children: [
+    { id: "1", title: "menuBar", children: [
+      { id: "2", title: "Site One", url: "https://old.example/a" },
+      { id: "3", title: "📁 Work", children: [
+        { id: "4", title: "Docs", children: [
+          { id: "5", title: "old readme", url: "https://old.example/b old" } ] },
+        { id: "8", title: "Notes", children: [
+          { id: "9", title: "old note", url: "https://n.example/old" } ] } ] } ] },
+    { id: "6", title: "toolbar", children: [
+      { id: "7", title: "Old Tab", url: "https://t.example/x" } ] } ] },
+];
+
+test("names mode without folders: bookmarks only", () => {
+  const t = collectTargets(TREE, { scopeId: null, recursive: true, mode: "names", includeFolders: false });
+  assert.deepEqual(t.map(x => x.id), ["2", "5", "9", "7"]);
+});
+
+test("names mode with folders excludes built-in roots", () => {
+  const t = collectTargets(TREE, { scopeId: null, recursive: true, mode: "names", includeFolders: true });
+  assert.deepEqual(t.map(x => x.id), ["2", "3", "4", "5", "8", "9", "7"]);
+});
+
+test("urls mode never yields folders", () => {
+  const t = collectTargets(TREE, { scopeId: null, recursive: true, mode: "urls", includeFolders: true });
+  assert.deepEqual(t.map(x => x.id), ["2", "5", "9", "7"]);
+  assert.ok(t.every(x => x.kind === "bookmark" && x.url !== undefined));
+});
+
+test("scope selects a folder's contents; paths are breadcrumbs", () => {
+  const t = collectTargets(TREE, { scopeId: "3", recursive: true, mode: "names", includeFolders: true });
+  assert.deepEqual(t.map(x => x.id), ["4", "5", "8", "9"]);
+  assert.equal(t.find(x => x.id === "5").path, "menuBar / 📁 Work / Docs");
+});
+
+test("non-recursive yields direct children of the scope only", () => {
+  const t = collectTargets(TREE, { scopeId: "3", recursive: false, mode: "names", includeFolders: true });
+  assert.deepEqual(t.map(x => x.id), ["4", "8"]);
+});
+
+test("non-recursive with folders off finds nothing inside Work", () => {
+  const t = collectTargets(TREE, { scopeId: "3", recursive: false, mode: "names", includeFolders: false });
+  assert.deepEqual(t, []);
+});
+
+test("whole-tree non-recursive: children of built-in roots", () => {
+  const t = collectTargets(TREE, { scopeId: null, recursive: false, mode: "names", includeFolders: true });
+  assert.deepEqual(t.map(x => x.id), ["2", "3", "7"]);
+});
+
+const walk = (over = {}) =>
+  collectTargets(TREE, { scopeId: null, recursive: true, mode: "names", includeFolders: false, ...over });
+
+test("null replacer yields no changes", () => {
+  assert.deepEqual(computeChanges(walk(), { replacer: null, mode: "names" }), []);
+});
+
+test("names: only items that actually change are reported", () => {
+  const changes = computeChanges(walk(), {
+    replacer: makeReplacer({ find: "old", replace: "new", regex: false, caseSensitive: true }),
+    mode: "names",
+  });
+  assert.deepEqual(changes.map(c => [c.id, c.field, c.original, c.proposed]), [
+    ["5", "title", "old readme", "new readme"],
+    ["9", "title", "old note", "new note"],
+  ]);
+});
+
+test("names with folders: folder titles participate", () => {
+  const changes = computeChanges(walk({ includeFolders: true }), {
+    replacer: makeReplacer({ find: "Work", replace: "Job", regex: false, caseSensitive: false }),
+    mode: "names",
+  });
+  assert.deepEqual(changes.map(c => [c.id, c.kind, c.proposed]), [["3", "folder", "📁 Job"]]);
+});
+
+test("urls mode computes url-field changes", () => {
+  const changes = computeChanges(walk({ mode: "urls" }), {
+    replacer: makeReplacer({ find: "old.example", replace: "new.example", regex: false, caseSensitive: true }),
+    mode: "urls",
+  });
+  assert.deepEqual(changes.map(c => [c.id, c.field]), [["2", "url"], ["5", "url"]]);
+});
+
+test("unparsable result URL is flagged invalid", () => {
+  const changes = computeChanges(walk({ mode: "urls" }), {
+    replacer: makeReplacer({ find: "old.example", replace: "spa ce.example", regex: false, caseSensitive: true }),
+    mode: "urls",
+  });
+  assert.ok(changes.length > 0);
+  assert.deepEqual(changes.map(c => c.problems), [["invalid URL"], ["invalid URL"]]);
+});
+
+test("empty result URL is flagged", () => {
+  const changes = computeChanges(walk({ mode: "urls" }), {
+    replacer: makeReplacer({ find: ".*", replace: "", regex: true, caseSensitive: true }),
+    mode: "urls",
+  });
+  assert.deepEqual(changes.map(c => c.problems), [
+    ["empty URL"], ["empty URL"], ["empty URL"], ["empty URL"],
+  ]);
+});
+
+test("empty result name is flagged", () => {
+  const changes = computeChanges(walk(), {
+    replacer: makeReplacer({ find: ".*", replace: "", regex: true, caseSensitive: true }),
+    mode: "names",
+  });
+  assert.ok(changes.length > 0);
+  assert.ok(changes.every(c => c.problems.includes("empty name")));
+});
+
+test("collapseWhitespace applies to the proposed value (emoji pipeline)", () => {
+  const changes = computeChanges(walk({ includeFolders: true }), {
+    replacer: makeReplacer({ find: EMOJI_FIND_PATTERN, replace: "", regex: true, caseSensitive: true }),
+    collapseWhitespace: true,
+    mode: "names",
+  });
+  assert.deepEqual(changes.map(c => [c.id, c.proposed]), [["3", "Work"]]);
+});
+
+test("without collapseWhitespace the emoji pipeline leaves raw spacing", () => {
+  const changes = computeChanges(walk({ includeFolders: true }), {
+    replacer: makeReplacer({ find: EMOJI_FIND_PATTERN, replace: "", regex: true, caseSensitive: true }),
+    mode: "names",
+  });
+  assert.equal(changes.find(c => c.id === "3").proposed, " Work");
 });
