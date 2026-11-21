@@ -27,9 +27,106 @@
     "message": "Include subfolders",
     "description": "Checkbox: search inside subfolders of the selected scope."
   },
-  "searchPending": {
-    "message": "Find & replace controls will appear here.",
-    "description": "Placeholder shown in the main panel until the search form exists."
+  "tabNames": {
+    "message": "Names",
+    "description": "Tab searching bookmark names and folder names."
+  },
+  "tabUrls": {
+    "message": "URLs",
+    "description": "Tab searching bookmark URLs."
+  },
+  "findLabel": {
+    "message": "Find",
+    "description": "Label of the search text field."
+  },
+  "replaceLabel": {
+    "message": "Replace with",
+    "description": "Label of the replacement text field."
+  },
+  "regexLabel": {
+    "message": "Regular expression",
+    "description": "Checkbox: treat Find as a regular expression."
+  },
+  "caseSensitiveLabel": {
+    "message": "Case sensitive",
+    "description": "Checkbox: match case."
+  },
+  "wholeWordLabel": {
+    "message": "Whole word",
+    "description": "Checkbox (literal mode only): match whole words only."
+  },
+  "includeFolderNames": {
+    "message": "Include folder names",
+    "description": "Checkbox on the Names tab: also rename folders that match."
+  },
+  "removeEmoji": {
+    "message": "Remove emoji",
+    "description": "Button: fills the search form with the emoji pattern."
+  },
+  "invalidRegex": {
+    "message": "Invalid regular expression:",
+    "description": "Prefix of the error shown when the Find pattern does not compile."
+  },
+  "summary": {
+    "message": "Changes: $1$ · Invalid: $2$",
+    "description": "Preview summary. Placeholders: 1 = applicable changes, 2 = excluded invalid results.",
+    "placeholders": {
+      "1": { "content": "$1" },
+      "2": { "content": "$2" }
+    }
+  },
+  "noChanges": {
+    "message": "No matching changes",
+    "description": "Summary when the search finds nothing to change."
+  },
+  "applyButton": {
+    "message": "Apply ($1$)",
+    "description": "Batch apply button. Placeholder: number of checked changes.",
+    "placeholders": { "1": { "content": "$1" } }
+  },
+  "applyNone": {
+    "message": "Apply",
+    "description": "Batch apply button before any changes are computed."
+  },
+  "applyOne": {
+    "message": "Apply",
+    "description": "Button applying a single preview row."
+  },
+  "includeRow": {
+    "message": "Include this change",
+    "description": "Accessible name of a preview row's include checkbox."
+  },
+  "colCurrent": {
+    "message": "Current",
+    "description": "Preview table column: the current value."
+  },
+  "colNew": {
+    "message": "New",
+    "description": "Preview table column: the proposed value."
+  },
+  "selectAllRows": {
+    "message": "Select or clear all changes",
+    "description": "Accessible name of the preview table header checkbox."
+  },
+  "applyHint": {
+    "message": "Apply all checked changes (Ctrl+Enter)",
+    "description": "Tooltip of the batch apply button."
+  },
+  "keyboardHint": {
+    "message": "Enter updates the preview. Ctrl+Enter applies the checked changes.",
+    "description": "Hint line shown below the search form."
+  },
+  "invalid-url": {
+    "message": "invalid URL",
+    "description": "Problem reason: the proposed URL cannot be parsed."
+  },
+  "empty-url": {
+    "message": "empty URL",
+    "description": "Problem reason: the proposed URL is empty."
+  },
+  "empty-name": {
+    "message": "empty name",
+    "description": "Problem reason: the proposed name is empty."
   },
   "toggleSidebar": {
     "message": "Show or hide the folder panel",

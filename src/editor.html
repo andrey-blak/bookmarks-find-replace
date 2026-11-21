@@ -45,7 +45,57 @@
       </label>
     </div>
 
-    <p class="muted" data-i18n="searchPending"></p>
+    <div class="tabs" role="tablist">
+      <button type="button" id="tabNames" class="tab active" role="tab" aria-selected="true"
+              data-mode="names" data-i18n="tabNames"></button>
+      <button type="button" id="tabUrls" class="tab" role="tab" aria-selected="false"
+              data-mode="urls" data-i18n="tabUrls"></button>
+    </div>
+
+    <section class="editor">
+      <div class="field">
+        <label for="find" data-i18n="findLabel"></label>
+        <div class="find-row">
+          <input id="find" type="text" autocomplete="off" spellcheck="false">
+          <button id="emojiPreset" class="preset-button" type="button" data-i18n="removeEmoji"></button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="replace" data-i18n="replaceLabel"></label>
+        <input id="replace" type="text" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="options">
+        <label><input type="checkbox" id="regex">
+          <span data-i18n="regexLabel"></span></label>
+        <label><input type="checkbox" id="caseSensitive">
+          <span data-i18n="caseSensitiveLabel"></span></label>
+        <label id="wholeWordOption" hidden><input type="checkbox" id="wholeWord">
+          <span data-i18n="wholeWordLabel"></span></label>
+        <label id="foldersOption"><input type="checkbox" id="includeFolders">
+          <span data-i18n="includeFolderNames"></span></label>
+      </div>
+    </section>
+
+    <p class="hint muted" data-i18n="keyboardHint"></p>
+
+    <div id="formError" class="error" role="alert" hidden></div>
+
+    <div class="preview-heading">
+      <span id="summary" class="muted" role="status"></span>
+      <button id="apply" class="primary" type="button" disabled data-i18n="applyNone"></button>
+    </div>
+
+    <table class="preview">
+      <thead>
+        <tr>
+          <th class="col-toggle"><input type="checkbox" id="selectAll"></th>
+          <th scope="col" data-i18n="colCurrent"></th>
+          <th scope="col" data-i18n="colNew"></th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="previewRows"></tbody>
+    </table>
   </main>
 
 </div>

@@ -4,6 +4,7 @@
 // every localized node carries data-i18n / data-i18n-title and is filled from
 // _locales here. Bookmark-derived text goes through textContent only — never
 // innerHTML.
+import { collectTargets, computeChanges, makeReplacer, describeReplacement, EMOJI_FIND_PATTERN } from "./lib/engine.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -11,6 +12,11 @@ const state = {
   tree: [],
   scopeId: null,        // null = All bookmarks
   expanded: new Set(),
+};
+
+const formState = {
+  mode: "names",
+  emojiPreset: false,
 };
 
 // --- i18n helpers ---
@@ -239,6 +245,303 @@ function renderScope() {
 function render() {
   renderSidebar();
   renderScope();
+  recompute();
+}
+
+// --- search form + live preview ---
+
+// Case-sensitivity defaults per tab (see docs/decisions.md).
+const CASE_DEFAULTS = { names: false, urls: true };
+
+let renderTimer;
+
+function scheduleRecompute() {
+  clearTimeout(renderTimer);
+  renderTimer = setTimeout(recompute, 100);
+}
+
+function scopeOptions() {
+  return {
+    scopeId: state.scopeId,
+    recursive: $("recursive").checked,
+    mode: formState.mode,
+    includeFolders: formState.mode === "names" && $("includeFolders").checked,
+  };
+}
+
+let previewEntries = []; // { change, checked, checkbox? }
+let renderToken = 0;     // cancels in-flight chunked renders
+
+// Very long strings would freeze the table; cells display a clipped copy while
+// the entries keep the full proposed values.
+const CLIP_LENGTH = 2000;
+
+// Highlighting gives up (plain rows) past this many segments per value.
+const MAX_PREVIEW_SEGMENTS = 200;
+
+function clipText(text) {
+  return text.length <= CLIP_LENGTH ? text : `${text.slice(0, CLIP_LENGTH)}…`;
+}
+
+function validEntries() {
+  return previewEntries.filter((entry) => entry.change.problems.length === 0);
+}
+
+function checkedValidCount() {
+  return validEntries().filter((entry) => entry.checked).length;
+}
+
+function updateApplyButton() {
+  const n = checkedValidCount();
+  const apply = $("apply");
+  apply.textContent = msg("applyButton", [n]);
+  apply.title = msg("applyHint");
+  apply.disabled = n === 0;
+  refreshSelectAll();
+}
+
+function refreshSelectAll() {
+  const entries = validEntries();
+  const checkedCount = entries.filter((entry) => entry.checked).length;
+  const selectAll = $("selectAll");
+  selectAll.disabled = entries.length === 0;
+  selectAll.checked = entries.length > 0 && checkedCount === entries.length;
+  selectAll.indeterminate = checkedCount > 0 && checkedCount < entries.length;
+  selectAll.setAttribute("aria-label", msg("selectAllRows"));
+}
+
+// Build a cell from {text, on} segments using textContent + <mark> only.
+function fillCell(cell, segments, hlClass, extraClass) {
+  const line = document.createElement("div");
+  line.className = "change-line";
+  if (extraClass) line.classList.add(extraClass);
+  for (const segment of segments) {
+    if (segment.on) {
+      const mark = document.createElement("mark");
+      mark.className = hlClass;
+      mark.textContent = segment.text;
+      line.append(mark);
+    } else {
+      line.append(document.createTextNode(segment.text));
+    }
+  }
+  cell.append(line);
+}
+
+function appendPlainLine(cell, text, extraClass, prefix = "") {
+  const line = document.createElement("div");
+  line.className = "change-line";
+  if (extraClass) line.classList.add(extraClass);
+  if (prefix) line.append(document.createTextNode(prefix));
+  line.append(document.createTextNode(clipText(text)));
+  cell.append(line);
+}
+
+function makeRow(entry, searchOpts) {
+  const { change } = entry;
+  const tr = document.createElement("tr");
+  if (change.problems.length) tr.className = "invalid";
+  const isFolder = change.kind === "folder";
+  if (isFolder) tr.classList.add("folder");
+
+  const tdCheck = document.createElement("td");
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = entry.checked;
+  checkbox.disabled = change.problems.length > 0;
+  checkbox.setAttribute("aria-label", msg("includeRow"));
+  checkbox.addEventListener("change", () => {
+    entry.checked = checkbox.checked;
+    updateApplyButton();
+  });
+  entry.checkbox = checkbox;
+  tdCheck.append(checkbox);
+
+  const described = describeReplacement(change.original, searchOpts, MAX_PREVIEW_SEGMENTS);
+  const folderClass = isFolder ? "folder-text" : "";
+
+  const tdCurrent = document.createElement("td");
+  if (described.overflow) {
+    appendPlainLine(tdCurrent, change.original, folderClass, isFolder ? "📁 " : "");
+  } else {
+    const currentSegments = described.search.map((p) => ({ text: clipText(p.text), on: p.matched }));
+    if (isFolder) currentSegments.unshift({ text: "📁 ", on: false });
+    fillCell(tdCurrent, currentSegments, "hl-match", folderClass);
+  }
+  const currentMeta = document.createElement("div");
+  currentMeta.className = "row-meta";
+  currentMeta.textContent = change.path;
+  tdCurrent.append(currentMeta);
+
+  const tdNew = document.createElement("td");
+  if (described.overflow || formState.emojiPreset) {
+    // No segments (or collapse shifted the offsets): plain clipped value.
+    appendPlainLine(tdNew, change.proposed, folderClass);
+  } else {
+    fillCell(tdNew, described.proposed.map((p) => ({ text: clipText(p.text), on: p.changed })),
+      "hl-result", folderClass);
+  }
+  if (change.problems.length) {
+    const reason = document.createElement("div");
+    reason.className = "row-meta";
+    const badge = document.createElement("span");
+    badge.className = "reason";
+    badge.textContent = change.problems.map(msg).join(", ");
+    reason.append(badge);
+    tdNew.append(reason);
+  }
+
+  const tdApply = document.createElement("td");
+  const single = document.createElement("button");
+  single.type = "button";
+  single.className = "apply-one";
+  single.textContent = msg("applyOne");
+  single.disabled = true;
+  tdApply.append(single);
+
+  tr.append(tdCheck, tdCurrent, tdNew, tdApply);
+  return tr;
+}
+
+// First rows paint immediately; the rest stream in per animation frame so a
+// huge result set never blocks typing.
+function renderPreview(searchOpts) {
+  const token = ++renderToken;
+  const tbody = $("previewRows");
+  tbody.replaceChildren();
+  const rows = previewEntries.map((entry) => makeRow(entry, searchOpts));
+  let i = 0;
+  const appendBatch = () => {
+    if (token !== renderToken) return;
+    const limit = i === 0 ? 300 : 600;
+    const fragment = document.createDocumentFragment();
+    const end = Math.min(rows.length, i + limit);
+    for (; i < end; i++) fragment.append(rows[i]);
+    tbody.append(fragment);
+    if (i < rows.length) requestAnimationFrame(appendBatch);
+  };
+  appendBatch();
+}
+
+function clearPreview() {
+  renderToken += 1;
+  previewEntries = [];
+  $("previewRows").replaceChildren();
+  updateApplyButton();
+}
+
+function recompute() {
+  $("formError").hidden = true;
+
+  const find = $("find").value;
+  if (!find) {
+    $("summary").textContent = "";
+    clearPreview();
+    return;
+  }
+
+  const searchOpts = {
+    find,
+    replace: $("replace").value,
+    regex: $("regex").checked,
+    caseSensitive: $("caseSensitive").checked,
+    wholeWord: $("wholeWord").checked,
+  };
+
+  let changes;
+  try {
+    changes = computeChanges(collectTargets(state.tree, scopeOptions()), {
+      replacer: makeReplacer(searchOpts),
+      mode: formState.mode,
+      collapseWhitespace: formState.emojiPreset,
+    });
+  } catch (error) {
+    $("formError").textContent = `${msg("invalidRegex")} ${error.message}`;
+    $("formError").hidden = false;
+    $("summary").textContent = "";
+    clearPreview();
+    return;
+  }
+
+  previewEntries = changes.map((change) => ({
+    change,
+    checked: change.problems.length === 0,
+  }));
+  renderPreview(searchOpts);
+
+  const invalid = changes.filter((c) => c.problems.length).length;
+  $("summary").textContent = changes.length
+    ? msg("summary", [changes.length - invalid, invalid])
+    : msg("noChanges");
+  updateApplyButton();
+}
+
+function setMode(mode) {
+  formState.mode = mode;
+  for (const tab of document.querySelectorAll(".tab")) {
+    const active = tab.dataset.mode === mode;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+  }
+  $("caseSensitive").checked = CASE_DEFAULTS[mode];
+  $("foldersOption").hidden = mode !== "names";
+  $("emojiPreset").hidden = mode !== "names";
+  formState.emojiPreset = false;
+  recompute();
+}
+
+function syncFormState() {
+  formState.emojiPreset =
+    $("regex").checked &&
+    $("find").value === EMOJI_FIND_PATTERN &&
+    $("replace").value === "";
+  $("wholeWordOption").hidden = $("regex").checked;
+}
+
+function wireForm() {
+  for (const tab of document.querySelectorAll(".tab")) {
+    tab.addEventListener("click", () => setMode(tab.dataset.mode));
+  }
+
+  for (const id of ["find", "replace", "regex", "caseSensitive", "wholeWord", "includeFolders", "recursive"]) {
+    const handler = () => {
+      syncFormState();
+      scheduleRecompute();
+    };
+    $(id).addEventListener("input", handler);
+    $(id).addEventListener("change", handler);
+  }
+
+  $("emojiPreset").addEventListener("click", () => {
+    if (formState.mode !== "names") setMode("names");
+    $("regex").checked = true;
+    $("find").value = EMOJI_FIND_PATTERN;
+    $("replace").value = "";
+    formState.emojiPreset = true;
+    $("wholeWordOption").hidden = true;
+    recompute();
+  });
+
+  $("selectAll").addEventListener("change", () => {
+    const selectAll = $("selectAll").checked;
+    for (const cb of $("previewRows").querySelectorAll("input[type=checkbox]")) {
+      if (!cb.disabled) cb.checked = selectAll;
+    }
+    updateApplyButton();
+  });
+
+  for (const id of ["find", "replace"]) {
+    $(id).addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
+        clearTimeout(renderTimer);
+        recompute();
+      } else if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+        if (!$("apply").disabled) $("apply").click();
+      }
+    });
+  }
+
+  syncFormState();
 }
 
 // --- sidebar resize / toggle ---
@@ -274,7 +577,6 @@ $("resizer").addEventListener("pointerup", () => {
   );
 });
 
-// Kept for evaluation; state intentionally not persisted yet.
 $("toggleSidebar").addEventListener("click", () => {
   layout.classList.toggle("sidebar-hidden");
 });
@@ -300,4 +602,5 @@ for (const event of [
 $("retry").addEventListener("click", loadBookmarks);
 document.title = msg("extensionName");
 localizeStaticText();
+wireForm();
 loadBookmarks();

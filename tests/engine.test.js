@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   escapeForRegex,
   makeReplacer,
+  describeReplacement,
   collapseWhitespace,
   EMOJI_FIND_PATTERN,
   collectTargets,
@@ -129,6 +130,84 @@ test("emoji-only name becomes empty string", () => {
   assert.equal(emojiStrip("🤩🤩"), "");
 });
 
+test("emoji pattern ignores plain digits, hash, and punctuation", () => {
+  const r = makeReplacer({ find: EMOJI_FIND_PATTERN, replace: "", regex: true, caseSensitive: true });
+  for (const text of [
+    "Guake - Auto start script init - ArchWiki",
+    "Default tab names - gsettings set guake.general display-tab-names 0",
+    "Википедия — свободная энциклопедия",
+    "tsvkit.org",
+    "Reverting some Firefox 106 Changes - Private Browsing now uses a Dark Theme | openSUSE Forums",
+    "Turn On or Off Shortcut Name Extension in Windows 10 | Tutorials",
+    "Google Chrome Gemini Nano - Faces Accusations of Unauthorized AI Model Download, Covertly Adding 4GB File - AI - C114Pro",
+    "about:preferences#sync",
+    "https://www.openworkstand.com/split-text",
+  ]) {
+    assert.equal(r(text), text, `pattern must not touch: ${text}`);
+  }
+});
+
+// --- describeReplacement (preview highlighting) ---
+
+test("describeReplacement: literal case-insensitive segments", () => {
+  const d = describeReplacement("foo Foo bar", { find: "foo", replace: "X", regex: false, caseSensitive: false });
+  assert.deepEqual(d.search.map((p) => [p.text, p.matched]), [
+    ["foo", true], [" ", false], ["Foo", true], [" bar", false],
+  ]);
+  assert.equal(d.proposed.map((p) => p.text).join(""), "X X bar");
+  assert.equal(d.proposed[0].changed, true);
+});
+
+test("describeReplacement: regex capture-group expansion", () => {
+  const d = describeReplacement("bob@dev", { find: "(\\w+)@(\\w+)", replace: "$2.$1", regex: true, caseSensitive: true });
+  assert.equal(d.proposed.map((p) => p.text).join(""), "dev.bob");
+});
+
+test("describeReplacement: $&, $` and $' references in regex mode", () => {
+  const d = describeReplacement("example.org/wiki/doc", { find: "wiki", replace: "[$`|$&|$']", regex: true, caseSensitive: true });
+  // $` = everything before the match, $& = the match, $' = everything after it
+  assert.equal(d.proposed.map((p) => p.text).join(""), "example.org/[example.org/|wiki|/doc]/doc");
+});
+
+test("expandTemplate group fallback matches native String.replace", () => {
+  // One group only: native semantics say "$10" = group 1 value + literal "0".
+  const d = describeReplacement("a", { find: "(a)", replace: "$10", regex: true, caseSensitive: true });
+  assert.equal(d.proposed.map((p) => p.text).join(""), "a0");
+  assert.equal(d.proposed.map((p) => p.text).join(""),
+    "a".replace(/(a)/gu, "$10")); // stays honest if both change
+  const many = describeReplacement("a1234567890b", {
+    find: "(a)(1)(2)(3)(4)(5)(6)(7)(8)(9)(0)", replace: "$10$11", regex: true, caseSensitive: true,
+  });
+  assert.equal(many.proposed.map((p) => p.text).join(""),
+    "a1234567890b".replace(/(a)(1)(2)(3)(4)(5)(6)(7)(8)(9)(0)/gu, "$10$11"));
+});
+
+test("describeReplacement: overflow cap for pathological match counts", () => {
+  // "()" matches at every position; with a small cap the description bails out.
+  const d = describeReplacement("aaaa", { find: "()", replace: "x", regex: true, caseSensitive: true }, 3);
+  assert.equal(d.overflow, true);
+  const ok = describeReplacement("ab", { find: "b", replace: "c", regex: true, caseSensitive: true }, 3);
+  assert.equal(ok.overflow, false);
+  assert.equal(ok.proposed.map((p) => p.text).join(""), "ac");
+});
+
+test("describeReplacement: literal mode keeps $ references verbatim", () => {
+  const d = describeReplacement("a b", { find: "b", replace: "$&$`$", regex: false, caseSensitive: true });
+  assert.equal(d.proposed.map((p) => p.text).join(""), "a $&$`$");
+});
+
+test("describeReplacement: zero-length matches terminate and match makeReplacer output", () => {
+  const opts = { find: ".*", replace: "$1", regex: true, caseSensitive: true };
+  const d = describeReplacement("about:addons", opts);
+  assert.equal(d.proposed.map((p) => p.text).join(""), makeReplacer(opts)("about:addons"));
+});
+
+test("describeReplacement: empty find yields unchanged single segment", () => {
+  const d = describeReplacement("x", { find: "" });
+  assert.deepEqual(d.search, [{ text: "x", matched: false }]);
+  assert.deepEqual(d.proposed, [{ text: "x", changed: false }]);
+});
+
 // ============================================================
 // Step 2: scope walk (collectTargets) and change computation
 // ============================================================
@@ -224,7 +303,7 @@ test("unparsable result URL is flagged invalid", () => {
     mode: "urls",
   });
   assert.ok(changes.length > 0);
-  assert.deepEqual(changes.map(c => c.problems), [["invalid URL"], ["invalid URL"]]);
+  assert.deepEqual(changes.map(c => c.problems), [["invalid-url"], ["invalid-url"]]);
 });
 
 test("empty result URL is flagged", () => {
@@ -233,7 +312,7 @@ test("empty result URL is flagged", () => {
     mode: "urls",
   });
   assert.deepEqual(changes.map(c => c.problems), [
-    ["empty URL"], ["empty URL"], ["empty URL"], ["empty URL"],
+    ["empty-url"], ["empty-url"], ["empty-url"], ["empty-url"],
   ]);
 });
 
@@ -243,7 +322,7 @@ test("empty result name is flagged", () => {
     mode: "names",
   });
   assert.ok(changes.length > 0);
-  assert.ok(changes.every(c => c.problems.includes("empty name")));
+  assert.ok(changes.every(c => c.problems.includes("empty-name")));
 });
 
 test("collapseWhitespace applies to the proposed value (emoji pipeline)", () => {
@@ -261,4 +340,32 @@ test("without collapseWhitespace the emoji pipeline leaves raw spacing", () => {
     mode: "names",
   });
   assert.equal(changes.find(c => c.id === "3").proposed, " Work");
+});
+
+test("spaces untouched by the search are preserved byte-for-byte", () => {
+  const targets = [{ id: "z", kind: "bookmark", path: "p", title: "g  modifier:  global", url: "https://z" }];
+  const changes = computeChanges(targets, {
+    replacer: makeReplacer({ find: "odif", replace: "", regex: true }),
+    mode: "names",
+  });
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].proposed, "g  mier:  global");
+});
+
+test("collapseWhitespace applies only when the search actually changed the value", () => {
+  const noisy = [{ id: "x", kind: "bookmark", path: "p", title: "  double  spaces ", url: "https://x" }];
+  const changes = computeChanges(noisy, {
+    replacer: makeReplacer({ find: "zzz", replace: "y", regex: true }),
+    mode: "names",
+    collapseWhitespace: true,
+  });
+  assert.deepEqual(changes, []); // untouched by the pattern -> not a "change"
+
+  const emoji = [{ id: "y", kind: "bookmark", path: "p", title: "🔥  hot", url: "https://y" }];
+  const stripped = computeChanges(emoji, {
+    replacer: makeReplacer({ find: EMOJI_FIND_PATTERN, replace: "", regex: true }),
+    mode: "names",
+    collapseWhitespace: true,
+  });
+  assert.deepEqual(stripped.map(c => c.proposed), ["hot"]);
 });

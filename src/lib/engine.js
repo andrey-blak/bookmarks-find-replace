@@ -10,39 +10,112 @@ export function escapeForRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export function makeReplacer({
-  find,
-  replace = "",
-  regex = false,
-  caseSensitive = false,
-  wholeWord = false,
-} = {}) {
-  if (!find) return null;
+// Compile the search once so a bad pattern surfaces at edit time, not at first
+// use; callers build a fresh RegExp per operation (no shared match state).
+// Throws SyntaxError with the engine's raw reason — display text is the UI's
+// job (localization lives in _locales, not here).
+function compileSpec({ find, regex, caseSensitive = false, wholeWord = false }) {
   const flags = "gu" + (caseSensitive ? "" : "i");
-
+  let source;
   if (regex) {
     // In regex mode the user owns the pattern; whole-word is the user's `\b`,
     // and `$1`/`$&` in the replacement work as JS documents them.
-    // Validate eagerly so a bad pattern surfaces at edit time, not at first use;
-    // each call still gets a fresh RegExp (no shared match state).
-    try {
-      new RegExp(find, flags);
-    } catch (error) {
-      throw new SyntaxError(`Invalid regular expression: ${error.message}`);
-    }
-    return (value) => value.replace(new RegExp(find, flags), replace);
+    source = find;
+  } else {
+    // Word edges are Unicode-aware: "not glued to a letter or digit on either
+    // side" (lookarounds over \p{L}/\p{N}), so Cyrillic, accented Latin, CJK and
+    // punctuation-quoted words all behave as users expect. Digits and underscore
+    // count as word parts, punctuation does not.
+    source = wholeWord
+      ? `(?<![\\p{L}\\p{N}_])(?:${escapeForRegex(find)})(?![\\p{L}\\p{N}_])`
+      : escapeForRegex(find);
   }
+  try {
+    new RegExp(source, flags);
+  } catch (error) {
+    throw new SyntaxError(error.message);
+  }
+  return { source, flags, interpretReplacement: Boolean(regex) };
+}
 
-  // Word edges are Unicode-aware: "not glued to a letter or digit on either
-  // side" (lookarounds over \p{L}/\p{N}), so Cyrillic, accented Latin, CJK and
-  // punctuation-quoted words all behave as users expect. Digits and underscore
-  // count as word parts, punctuation does not.
-  const source = wholeWord
-    ? `(?<![\\p{L}\\p{N}_])(?:${escapeForRegex(find)})(?![\\p{L}\\p{N}_])`
-    : escapeForRegex(find);
-  // The replacer callback returns the replacement verbatim: string.replace would
-  // otherwise interpret `$1`, `$&` etc. inside it.
-  return (value) => value.replace(new RegExp(source, flags), () => replace);
+// Expand JS replacement-pattern references ($$, $&, $`, $', $n/$nn) the way
+// String.replace would, for one match. Unknown group numbers stay literal,
+// mirroring the spec.
+function expandTemplate(template, match, text) {
+  return template.replace(/\$(\$|&|`|'|\d{1,2})/g, (whole, key) => {
+    switch (key) {
+      case "$": return "$";
+      case "&": return match[0];
+      case "`": return text.slice(0, match.index);
+      case "'": return text.slice(match.index + match[0].length);
+      default: {
+        const hasGroup = (n) => n > 0 && n < match.length && match[n] !== undefined;
+        if (key.length === 2) {
+          if (hasGroup(Number(key))) return match[Number(key)];
+          // Two-digit group does not exist: per spec the first digit is the
+          // group and the second digit becomes literal text.
+          if (hasGroup(Number(key[0]))) return match[Number(key[0])] + key[1];
+          return whole;
+        }
+        return hasGroup(Number(key)) ? match[Number(key)] : whole;
+      }
+    }
+  });
+}
+
+export function makeReplacer(options = {}) {
+  const { find, replace = "" } = options;
+  if (!find) return null;
+  const { source, flags, interpretReplacement } = compileSpec(options);
+  const substitution = interpretReplacement ? replace : (() => replace);
+  return (value) => value.replace(new RegExp(source, flags), substitution);
+}
+
+// Same work as makeReplacer, but exposing which parts of the strings came from
+// matches — the UI uses it to highlight "found here" and "produced by replace"
+// segments in the preview. Guarantees: proposed.join("") equals
+// makeReplacer(options)(value) for the same options.
+// Patterns matching at nearly every position ("()", "a*", ...) would produce
+// thousands of tiny segments per string: above maxSegments the description
+// bails out with { overflow: true } and callers fall back to plain text.
+export function describeReplacement(value, options = {}, maxSegments = Infinity) {
+  const { find, replace = "" } = options;
+  if (!find) {
+    return {
+      search: [{ text: value, matched: false }],
+      proposed: [{ text: value, changed: false }],
+      overflow: false,
+    };
+  }
+  const { source, flags, interpretReplacement } = compileSpec(options);
+  const re = new RegExp(source, flags);
+  const search = [];
+  const proposed = [];
+  let last = 0;
+  let match;
+  while ((match = re.exec(value)) !== null) {
+    if (search.length + proposed.length > maxSegments) return { overflow: true };
+    if (match.index > last) {
+      const text = value.slice(last, match.index);
+      search.push({ text, matched: false });
+      proposed.push({ text, changed: false });
+    }
+    if (match[0] !== "") search.push({ text: match[0], matched: true });
+    const out = interpretReplacement
+      ? expandTemplate(replace, match, value)
+      : replace;
+    if (out !== "") proposed.push({ text: out, changed: true });
+    last = match.index + match[0].length;
+    if (match[0] === "") re.lastIndex += 1; // zero-length match guard
+  }
+  if (last < value.length) {
+    const text = value.slice(last);
+    search.push({ text, matched: false });
+    proposed.push({ text, changed: false });
+  }
+  if (search.length === 0) search.push({ text: "", matched: true });
+  if (proposed.length === 0) proposed.push({ text: "", changed: false });
+  return { search, proposed, overflow: false };
 }
 
 export function collapseWhitespace(value) {
@@ -108,7 +181,8 @@ export function collectTargets(
 // --- change computation ---
 
 // One entry per (target, field) whose value actually differs.
-// problems: "empty URL" | "invalid URL" (proposed result), "empty name".
+// problems are localization codes (the UI maps them to _locales):
+// "empty-url" | "invalid-url" | "empty-name".
 export function computeChanges(targets, { replacer, mode, collapseWhitespace: collapse = false }) {
   if (!replacer) return [];
   const changes = [];
@@ -117,22 +191,24 @@ export function computeChanges(targets, { replacer, mode, collapseWhitespace: co
     const original = target[field];
     if (original === undefined) continue;
     let proposed = replacer(original);
-    if (collapse) proposed = collapseWhitespace(proposed);
+    // Collapse only when the search actually altered the value: a name with
+    // stray double spaces but no match is not a change.
+    if (collapse && proposed !== original) proposed = collapseWhitespace(proposed);
     if (proposed === original) continue;
 
     const problems = [];
     if (field === "url") {
       if (proposed === "") {
-        problems.push("empty URL");
+        problems.push("empty-url");
       } else {
         try {
           new URL(proposed);
         } catch {
-          problems.push("invalid URL");
+          problems.push("invalid-url");
         }
       }
     } else if (proposed.trim() === "") {
-      problems.push("empty name");
+      problems.push("empty-name");
     }
 
     changes.push({
@@ -147,8 +223,10 @@ export function computeChanges(targets, { replacer, mode, collapseWhitespace: co
 // string into the visible Find field (regex mode), so what runs is what the user
 // sees and can edit. Covers pictographs, ZWJ sequences, skin tones, keycaps,
 // flags, variation selectors. Coverage is bounded by the engine's Unicode data.
+// Plain digits and "#" are NOT emoji: the keycap branch requires the full
+// FE0F + 20E3 sequence (verified against names like "Firefox 106 ... 4GB").
 const EMOJI_ELEMENT =
-  "(?:\\p{Extended_Pictographic}|\\p{Regional_Indicator}{2}|[0-9#*]\\uFE0F?)";
+  "(?:\\p{Extended_Pictographic}|\\p{Regional_Indicator}{2}|[0-9#*]\\uFE0F\\u20E3)";
 
 export const EMOJI_FIND_PATTERN =
   `${EMOJI_ELEMENT}(?:\\u200D${EMOJI_ELEMENT}|[\\u{1F3FB}-\\u{1F3FF}]|[\\uFE0F\\u20E3])*`;
