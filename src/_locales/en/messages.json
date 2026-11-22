@@ -92,6 +92,24 @@
     "message": "Apply",
     "description": "Button applying a single preview row."
   },
+  "confirmApply": {
+    "message": "Apply $1 changes to your bookmarks?",
+    "description": "Confirmation dialog before writing. Placeholder: number of changes.",
+    "placeholders": { "1": { "content": "$1" } }
+  },
+  "applyResult": {
+    "message": "Applied: $1$ · Skipped: $2$ · Errors: $3$",
+    "description": "Result line after a batch apply. Placeholders: applied, skipped, error counts.",
+    "placeholders": {
+      "1": { "content": "$1" },
+      "2": { "content": "$2" },
+      "3": { "content": "$3" }
+    }
+  },
+  "skippedChanged": {
+    "message": "changed since preview",
+    "description": "Reason shown when an item is not written because its value differs from the previewed one."
+  },
   "includeRow": {
     "message": "Include this change",
     "description": "Accessible name of a preview row's include checkbox."

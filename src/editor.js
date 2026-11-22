@@ -111,6 +111,7 @@ function makeFolderRow(node, parentId) {
   label.setAttribute("aria-selected", String(state.scopeId === node.id));
   if (state.scopeId === node.id) row.classList.add("selected");
   label.addEventListener("click", () => {
+    clearApplyResult();
     state.scopeId = node.id;
     state.expanded.add(node.id);
     focusId = node.id;
@@ -155,6 +156,7 @@ function renderSidebar() {
   allButton.setAttribute("aria-selected", String(state.scopeId === null));
   if (state.scopeId === null) allRow.classList.add("selected");
   allButton.addEventListener("click", () => {
+    clearApplyResult();
     state.scopeId = null;
     focusId = null;
     render();
@@ -248,6 +250,62 @@ function render() {
   recompute();
 }
 
+// --- apply ---
+
+// Batches of completed changes: [{ when, entries: [{id, field, oldValue, storedValue}] }]
+const undoBatches = [];
+
+async function applyEntries(entries) {
+  const selected = entries.filter((entry) => entry.change.problems.length === 0);
+  if (selected.length === 0) return;
+  if (!confirm(msg("confirmApply", [selected.length]))) return;
+  clearApplyResult();
+
+  $("apply").disabled = true;
+  const done = [];
+  const skipped = [];
+  const errors = [];
+
+  for (const { change } of selected) {
+    try {
+      const [current] = await browser.bookmarks.get(change.id);
+      const actual = change.field === "url" ? current.url : current.title;
+      if (actual !== change.original) {
+        skipped.push(`${change.path}: ${msg("skippedChanged")}`);
+        continue;
+      }
+      // storedValue: what Firefox kept (it may normalize the input).
+      const updated = await browser.bookmarks.update(change.id, {
+        [change.field]: change.proposed,
+      });
+      done.push({
+        id: change.id,
+        field: change.field,
+        oldValue: change.original,
+        storedValue: updated[change.field],
+      });
+    } catch (error) {
+      errors.push(`${change.path}: ${error.message}`);
+    }
+  }
+
+  if (done.length > 0) undoBatches.push({ when: Date.now(), entries: done });
+  showApplyResult(done.length, skipped, errors);
+  await loadBookmarks();
+}
+
+function showApplyResult(applied, skipped, errors) {
+  const result = $("applyResult");
+  if (applied === 0 && skipped.length === 0 && errors.length === 0) {
+    result.hidden = true;
+    return;
+  }
+  const lines = [msg("applyResult", [applied, skipped.length, errors.length])];
+  lines.push(...skipped, ...errors);
+  result.textContent = lines.join("\n");
+  result.hidden = false;
+}
+
 // --- search form + live preview ---
 
 // Case-sensitivity defaults per tab (see docs/decisions.md).
@@ -289,6 +347,14 @@ function validEntries() {
 
 function checkedValidCount() {
   return validEntries().filter((entry) => entry.checked).length;
+}
+
+// The apply/undo result line stays visible until the user interacts again;
+// re-renders (auto-refresh, post-apply reload) must not wipe it.
+function clearApplyResult() {
+  const result = $("applyResult");
+  result.hidden = true;
+  result.textContent = "";
 }
 
 function updateApplyButton() {
@@ -396,7 +462,7 @@ function makeRow(entry, searchOpts) {
   single.type = "button";
   single.className = "apply-one";
   single.textContent = msg("applyOne");
-  single.disabled = true;
+  single.addEventListener("click", () => applyEntries([entry]));
   tdApply.append(single);
 
   tr.append(tdCheck, tdCurrent, tdNew, tdApply);
@@ -478,6 +544,7 @@ function recompute() {
 
 function setMode(mode) {
   formState.mode = mode;
+  clearApplyResult();
   for (const tab of document.querySelectorAll(".tab")) {
     const active = tab.dataset.mode === mode;
     tab.classList.toggle("active", active);
@@ -505,6 +572,7 @@ function wireForm() {
 
   for (const id of ["find", "replace", "regex", "caseSensitive", "wholeWord", "includeFolders", "recursive"]) {
     const handler = () => {
+      clearApplyResult();
       syncFormState();
       scheduleRecompute();
     };
@@ -513,6 +581,7 @@ function wireForm() {
   }
 
   $("emojiPreset").addEventListener("click", () => {
+    clearApplyResult();
     if (formState.mode !== "names") setMode("names");
     $("regex").checked = true;
     $("find").value = EMOJI_FIND_PATTERN;
@@ -524,10 +593,17 @@ function wireForm() {
 
   $("selectAll").addEventListener("change", () => {
     const selectAll = $("selectAll").checked;
-    for (const cb of $("previewRows").querySelectorAll("input[type=checkbox]")) {
-      if (!cb.disabled) cb.checked = selectAll;
+    for (const entry of previewEntries) {
+      if (entry.change.problems.length === 0) {
+        entry.checked = selectAll;
+        if (entry.checkbox) entry.checkbox.checked = selectAll;
+      }
     }
     updateApplyButton();
+  });
+
+  $("apply").addEventListener("click", () => {
+    applyEntries(validEntries().filter((entry) => entry.checked));
   });
 
   for (const id of ["find", "replace"]) {

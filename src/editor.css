@@ -243,6 +243,11 @@ table.preview { width: 100%; border-collapse: collapse; }
   border-bottom: 1px solid var(--border);
 }
 
+.apply-result {
+  margin: 8px 0 0;
+  white-space: pre-line;
+}
+
 .preview td {
   padding: 6px 8px;
   border-bottom: 1px solid color-mix(in srgb, CanvasText 7%, transparent);
