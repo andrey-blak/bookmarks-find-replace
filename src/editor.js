@@ -289,18 +289,70 @@ async function applyEntries(entries) {
     }
   }
 
-  if (done.length > 0) undoBatches.push({ when: Date.now(), entries: done });
-  showApplyResult(done.length, skipped, errors);
+  if (done.length > 0) {
+    if (undoBatches.length >= 20) undoBatches.shift();
+    undoBatches.push({ when: Date.now(), entries: done });
+    updateUndoButton();
+  }
+  showOpResult("applyResult", done.length, skipped, errors);
   await loadBookmarks();
 }
 
-function showApplyResult(applied, skipped, errors) {
+// --- undo ---
+
+function batchSummary(entries) {
+  const names = entries.filter((entry) => entry.field === "title").length;
+  return msg("batchSummary", [names, entries.length - names]);
+}
+
+function updateUndoButton() {
+  const btn = $("undo");
+  const batch = undoBatches[undoBatches.length - 1];
+  if (!batch) {
+    btn.hidden = true;
+    return;
+  }
+  btn.hidden = false;
+  btn.textContent = msg("undoLabel", [
+    batchSummary(batch.entries),
+    new Date(batch.when).toLocaleTimeString(),
+  ]);
+}
+
+async function undoLast() {
+  const batch = undoBatches.pop();
+  if (!batch) return;
+  updateUndoButton();
+
+  const restored = [];
+  const skipped = [];
+  const errors = [];
+  for (const item of batch.entries.slice().reverse()) {
+    try {
+      const [current] = await browser.bookmarks.get(item.id);
+      const actual = item.field === "url" ? current.url : current.title;
+      if (actual !== item.storedValue) {
+        skipped.push(msg("skippedSinceApply"));
+        continue;
+      }
+      await browser.bookmarks.update(item.id, { [item.field]: item.oldValue });
+      restored.push(item);
+    } catch (error) {
+      errors.push(error.message);
+    }
+  }
+
+  showOpResult("undoResult", restored.length, skipped, errors);
+  await loadBookmarks();
+}
+
+function showOpResult(messageKey, applied, skipped, errors) {
   const result = $("applyResult");
   if (applied === 0 && skipped.length === 0 && errors.length === 0) {
     result.hidden = true;
     return;
   }
-  const lines = [msg("applyResult", [applied, skipped.length, errors.length])];
+  const lines = [msg(messageKey, [applied, skipped.length, errors.length])];
   lines.push(...skipped, ...errors);
   result.textContent = lines.join("\n");
   result.hidden = false;
@@ -604,6 +656,25 @@ function wireForm() {
 
   $("apply").addEventListener("click", () => {
     applyEntries(validEntries().filter((entry) => entry.checked));
+  });
+
+  $("undo").addEventListener("click", undoLast);
+
+  // Ctrl/Cmd+Z undoes the last batch — except while a text field has focus,
+  // where the keystroke belongs to the field's own editing history.
+  document.addEventListener("keydown", (event) => {
+    if (!(event.ctrlKey || event.metaKey) || event.shiftKey) return;
+    if (event.key.toLowerCase() !== "z") return;
+    const target = event.target;
+    const editing =
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      target.isContentEditable;
+    if (editing) return;
+    const btn = $("undo");
+    if (btn.hidden) return;
+    event.preventDefault();
+    btn.click();
   });
 
   for (const id of ["find", "replace"]) {

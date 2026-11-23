@@ -2,11 +2,19 @@
 
 A Firefox extension for finding and replacing text in bookmark names, folder names, and URLs, with regular expressions, scoped search, and live preview.
 
-The editor page shows the bookmark folder tree, lets you pick the search scope, previews changes live on Names and URLs tabs, and applies the selected changes.
+The editor page shows the bookmark folder tree, lets you pick the search scope, previews changes live on Names and URLs tabs, applies the selected changes, and undoes applied batches while the tab stays open.
 
 ## Requirements
 
 - Firefox 142 or later.
+
+## Limits
+
+- The extension changes names and URLs only — it never creates, deletes, or moves bookmarks.
+- Bookmark tags cannot be edited through the WebExtensions API.
+- The emoji preset's coverage is bounded by the JavaScript engine's Unicode data.
+- Undo covers only batches applied while the editor tab is open; closing the tab discards them.
+- Firefox stores URLs normalized (for example, international domains become punycode); undo compares against the stored form, not the typed one.
 
 ## Install for testing (temporary add-on)
 

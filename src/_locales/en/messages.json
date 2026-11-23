@@ -110,6 +110,35 @@
     "message": "changed since preview",
     "description": "Reason shown when an item is not written because its value differs from the previewed one."
   },
+  "skippedSinceApply": {
+    "message": "changed since apply",
+    "description": "Reason shown when an undo item is not restored because its value differs from the stored one."
+  },
+  "batchSummary": {
+    "message": "Names: $1$ · URLs: $2$",
+    "description": "Description of an undo batch. Placeholders: changed names count, changed URLs count.",
+    "placeholders": {
+      "1": { "content": "$1" },
+      "2": { "content": "$2" }
+    }
+  },
+  "undoLabel": {
+    "message": "Undo: $1$ ($2$)",
+    "description": "Undo button label. Placeholders: batch description, local time of the batch.",
+    "placeholders": {
+      "1": { "content": "$1" },
+      "2": { "content": "$2" }
+    }
+  },
+  "undoResult": {
+    "message": "Undone: $1$ · Skipped: $2$ · Errors: $3$",
+    "description": "Result line after an undo. Placeholders: restored, skipped, error counts.",
+    "placeholders": {
+      "1": { "content": "$1" },
+      "2": { "content": "$2" },
+      "3": { "content": "$3" }
+    }
+  },
   "includeRow": {
     "message": "Include this change",
     "description": "Accessible name of a preview row's include checkbox."
@@ -131,7 +160,7 @@
     "description": "Tooltip of the batch apply button."
   },
   "keyboardHint": {
-    "message": "Enter updates the preview. Ctrl+Enter applies the checked changes.",
+    "message": "Enter updates the preview. Ctrl+Enter applies the checked changes. Ctrl+Z undoes the last batch.",
     "description": "Hint line shown below the search form."
   },
   "invalid-url": {
