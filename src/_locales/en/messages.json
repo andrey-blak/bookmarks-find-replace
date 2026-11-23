@@ -60,7 +60,7 @@
     "description": "Checkbox on the Names tab: also rename folders that match."
   },
   "removeEmoji": {
-    "message": "Remove emoji",
+    "message": "😀 Remove emoji",
     "description": "Button: fills the search form with the emoji pattern."
   },
   "invalidRegex": {
@@ -80,22 +80,17 @@
     "description": "Summary when the search finds nothing to change."
   },
   "applyButton": {
-    "message": "Apply ($1$)",
+    "message": "Apply all ($1$)",
     "description": "Batch apply button. Placeholder: number of checked changes.",
     "placeholders": { "1": { "content": "$1" } }
   },
   "applyNone": {
-    "message": "Apply",
+    "message": "Apply all",
     "description": "Batch apply button before any changes are computed."
   },
   "applyOne": {
     "message": "Apply",
     "description": "Button applying a single preview row."
-  },
-  "confirmApply": {
-    "message": "Apply $1 changes to your bookmarks?",
-    "description": "Confirmation dialog before writing. Placeholder: number of changes.",
-    "placeholders": { "1": { "content": "$1" } }
   },
   "applyResult": {
     "message": "Applied: $1$ · Skipped: $2$ · Errors: $3$",

@@ -258,7 +258,6 @@ const undoBatches = [];
 async function applyEntries(entries) {
   const selected = entries.filter((entry) => entry.change.problems.length === 0);
   if (selected.length === 0) return;
-  if (!confirm(msg("confirmApply", [selected.length]))) return;
   clearApplyResult();
 
   $("apply").disabled = true;
