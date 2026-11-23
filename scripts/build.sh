@@ -33,11 +33,29 @@ try:
 except (OSError, ValueError) as e:
     sys.exit(f"Manifest validation error:\n{path}:\n{e}")
 
-missing = [k for k in ("manifest_version", "name", "version") if k not in manifest]
+def has_key(data, dotted_key):
+    for key in dotted_key.split("."):
+        if not isinstance(data, dict) or key not in data:
+            return False
+        data = data[key]
+    return True
+
+missing = [
+    k
+    for k in (
+        "manifest_version",
+        "name",
+        "version",
+        "browser_specific_settings.gecko.id",
+        "browser_specific_settings.gecko.data_collection_permissions",
+    )
+    if not has_key(manifest, k)
+]
 if missing:
     sys.exit(f"Manifest validation error:\n{path}: missing {', '.join(missing)}")
 PY
 
+# Pack
 cd "$SRC_DIR"
 
 DIST_DIR="$PROJECT_DIR/dist"
