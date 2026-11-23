@@ -2,7 +2,7 @@
 
 A Firefox extension for finding and replacing text in bookmark names, folder names, and URLs, with regular expressions, scoped search, and live preview.
 
-The editor page shows the bookmark folder tree, lets you pick the search scope, previews changes live on Names and URLs tabs, applies the selected changes, and undoes applied batches while the tab stays open.
+The editor page shows the bookmark folder tree, lets you pick the search scope, previews changes live on Names and URLs tabs, applies the selected changes, and undoes applied batches while the tab stays open. URL search and preview use the readable form of addresses: punycode hosts and percent-encoded text are matched and shown decoded.
 
 ## Requirements
 

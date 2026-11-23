@@ -122,6 +122,103 @@ export function collapseWhitespace(value) {
   return value.replace(/\s+/g, " ").trim();
 }
 
+// --- readable URL form ---
+
+// Decoded view used for matching and display on the URLs tab: punycode host
+// becomes Unicode, UTF-8 percent escapes outside the reserved set become
+// readable characters. Reserved escapes (%2F) and malformed input are left
+// untouched; the function never throws. Storage and the apply re-check keep
+// using the raw value.
+const REBUILDABLE_PROTOCOLS = new Set(["http:", "https:", "ftp:"]);
+
+// RFC 3492 punycode decoding (compact reference implementation). Needed
+// because Node's URL keeps xn-- hosts serialized while browsers may not —
+// the engine must decide the readable form itself, identically everywhere.
+function punycodeDecode(input) {
+  const base = 36, tmin = 1, tmax = 26, skew = 38, damp = 700;
+  let n = 128, i = 0, bias = 72;
+  const basic = input.lastIndexOf("-");
+  const output = basic > 0
+    ? [...input.slice(0, basic)].map((c) => c.codePointAt(0))
+    : [];
+  let pos = basic > 0 ? basic + 1 : 0;
+
+  const decodeDigit = (cp) => {
+    if (cp >= 48 && cp <= 57) return cp - 22;  // '0'-'9' -> 26..35
+    if (cp >= 65 && cp <= 90) return cp - 65;  // 'A'-'Z' -> 0..25
+    if (cp >= 97 && cp <= 122) return cp - 97; // 'a'-'z' -> 0..25
+    throw new Error("bad punycode digit");
+  };
+  const adapt = (delta, numPoints, firstTime) => {
+    delta = firstTime ? Math.floor(delta / damp) : delta >> 1;
+    delta += Math.floor(delta / (base - tmin));
+    let k = 0;
+    while (delta > ((base - tmin) * tmax) >> 1) {
+      delta = Math.floor(delta / (base - tmin));
+      k += base;
+    }
+    return k + Math.floor(((base - tmin + 1) * delta) / (delta + skew));
+  };
+
+  for (; pos < input.length; ) {
+    const oldi = i;
+    let w = 1;
+    for (let k = base; ; k += base) {
+      if (pos >= input.length) throw new Error("bad punycode");
+      const digit = decodeDigit(input.charCodeAt(pos++));
+      i += digit * w;
+      const t = k <= bias ? tmin : k >= bias + tmax ? tmax : k - bias;
+      if (digit < t) break;
+      w *= base - t;
+    }
+    const out = output.length + 1;
+    bias = adapt(i - oldi, out, oldi === 0);
+    n += Math.floor(i / out);
+    i %= out;
+    output.splice(i++, 0, n);
+  }
+  return String.fromCodePoint(...output);
+}
+
+function unicodeHost(host) {
+  return host
+    .split(".")
+    .map((label) => {
+      if (!/^xn--/i.test(label)) return label;
+      try {
+        return punycodeDecode(label.slice(4));
+      } catch {
+        return label; // undecodable label: keep raw form
+      }
+    })
+    .join(".");
+}
+
+function softDecode(text) {
+  try {
+    return decodeURI(text);
+  } catch {
+    return text;
+  }
+}
+
+export function searchableUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+    if (REBUILDABLE_PROTOCOLS.has(url.protocol) && url.hostname) {
+      const auth = url.username
+        ? `${url.username}${url.password ? ":" + url.password : ""}@`
+        : "";
+      const host = unicodeHost(url.hostname) + (url.port ? `:${url.port}` : "");
+      return `${url.protocol}//${auth}${host}` +
+        `${softDecode(url.pathname)}${softDecode(url.search)}${softDecode(url.hash)}`;
+    }
+  } catch {
+    // not a parseable URL: fall through to a best-effort escape decode
+  }
+  return softDecode(rawUrl);
+}
+
 // --- scope walk ---
 
 // Flatten the getTree()-shaped tree into editable targets.
@@ -181,6 +278,8 @@ export function collectTargets(
 // --- change computation ---
 
 // One entry per (target, field) whose value actually differs.
+// URLs are matched on their readable form (searchableUrl): `searchable` and
+// `proposed` are decoded text, `original` stays the raw stored value.
 // problems are localization codes (the UI maps them to _locales):
 // "empty-url" | "invalid-url" | "empty-name".
 export function computeChanges(targets, { replacer, mode, collapseWhitespace: collapse = false }) {
@@ -190,11 +289,12 @@ export function computeChanges(targets, { replacer, mode, collapseWhitespace: co
     const field = mode === "urls" ? "url" : "title";
     const original = target[field];
     if (original === undefined) continue;
-    let proposed = replacer(original);
+    const searchable = field === "url" ? searchableUrl(original) : original;
+    let proposed = replacer(searchable);
     // Collapse only when the search actually altered the value: a name with
     // stray double spaces but no match is not a change.
-    if (collapse && proposed !== original) proposed = collapseWhitespace(proposed);
-    if (proposed === original) continue;
+    if (collapse && proposed !== searchable) proposed = collapseWhitespace(proposed);
+    if (proposed === searchable) continue;
 
     const problems = [];
     if (field === "url") {
@@ -213,7 +313,7 @@ export function computeChanges(targets, { replacer, mode, collapseWhitespace: co
 
     changes.push({
       id: target.id, kind: target.kind, path: target.path,
-      field, original, proposed, problems,
+      field, original, searchable, proposed, problems,
     });
   }
   return changes;

@@ -8,7 +8,65 @@ import {
   EMOJI_FIND_PATTERN,
   collectTargets,
   computeChanges,
+  searchableUrl,
 } from "../src/lib/engine.js";
+
+// --- searchableUrl (readable form for URL matching/display) ---
+
+test("searchableUrl leaves plain ASCII URLs unchanged", () => {
+  for (const url of [
+    "https://example.com/path?q=1#frag",
+    "http://a.b.c/x/y/z",
+    "https://example.com:8443/app#top",
+  ]) {
+    assert.equal(searchableUrl(url), url);
+  }
+});
+
+test("searchableUrl normalizes a bare domain to its stored form", () => {
+  assert.equal(searchableUrl("https://example.com"), "https://example.com/");
+});
+
+test("searchableUrl decodes punycode hosts", () => {
+  assert.equal(searchableUrl("https://xn--e1afmkfd.xn--p1ai/"), "https://пример.рф/");
+  assert.equal(searchableUrl("https://xn--e1afmkfd.xn--p1ai:8443/x"), "https://пример.рф:8443/x");
+});
+
+test("searchableUrl decodes UTF-8 percent escapes in path/query/fragment", () => {
+  assert.equal(
+    searchableUrl("https://example.com/%D0%BF%D1%80%D0%B8"),
+    "https://example.com/при",
+  );
+  assert.equal(
+    searchableUrl("https://example.com/q?x=%D1%8E"),
+    "https://example.com/q?x=ю",
+  );
+});
+
+test("searchableUrl keeps reserved escapes and malformed input as-is", () => {
+  // decodeURI does not touch %2F: the slash inside the segment stays encoded.
+  assert.equal(searchableUrl("https://example.com/a%2Fb"), "https://example.com/a%2Fb");
+  assert.equal(searchableUrl("https://example.com/%zz"), "https://example.com/%zz"); // no throw
+  assert.equal(searchableUrl("not a url"), "not a url");
+  assert.equal(searchableUrl("about:preferences#sync"), "about:preferences#sync");
+});
+
+// --- searchable form inside change computation ---
+
+test("URL search matches the readable form of a punycode bookmark", () => {
+  const targets = [{
+    id: "u1", kind: "bookmark", path: "p",
+    title: "wiki", url: "https://xn--e1afmkfd.xn--p1ai/Article",
+  }];
+  const changes = computeChanges(targets, {
+    replacer: makeReplacer({ find: "пример", replace: "домен", regex: false, caseSensitive: true }),
+    mode: "urls",
+  });
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].original, "https://xn--e1afmkfd.xn--p1ai/Article"); // raw, for apply re-check
+  assert.equal(changes[0].searchable, "https://пример.рф/Article");
+  assert.equal(changes[0].proposed, "https://домен.рф/Article");
+});
 
 // --- escapeForRegex ---
 

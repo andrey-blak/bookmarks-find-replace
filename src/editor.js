@@ -474,12 +474,12 @@ function makeRow(entry, searchOpts) {
   entry.checkbox = checkbox;
   tdCheck.append(checkbox);
 
-  const described = describeReplacement(change.original, searchOpts, MAX_PREVIEW_SEGMENTS);
+  const described = describeReplacement(change.searchable, searchOpts, MAX_PREVIEW_SEGMENTS);
   const folderClass = isFolder ? "folder-text" : "";
 
   const tdCurrent = document.createElement("td");
   if (described.overflow) {
-    appendPlainLine(tdCurrent, change.original, folderClass, isFolder ? "📁 " : "");
+    appendPlainLine(tdCurrent, change.searchable, folderClass, isFolder ? "📁 " : "");
   } else {
     const currentSegments = described.search.map((p) => ({ text: clipText(p.text), on: p.matched }));
     if (isFolder) currentSegments.unshift({ text: "📁 ", on: false });
